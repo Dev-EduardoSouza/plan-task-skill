@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
+  "name": "plan-task-skill",
+  "owner": {
+    "name": "Eduardo",
+    "url": "https://github.com/Dev-EduardoSouza"
+  },
+  "plugins": [
+    {
+      "name": "plan-task",
+      "source": "./",
+      "description": "Planeja tasks de desenvolvimento em docs/tasks/<ID>/ com uma spec por etapa, executa uma spec por vez e commita em lote."
+    }
+  ]
+}
