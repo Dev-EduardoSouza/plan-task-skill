@@ -1,263 +1,167 @@
 ---
 name: plan-task
-description: Fragmenta uma solicitação de desenvolvimento em subtarefas rastreáveis, documenta o progresso em docs/tasks/[nome_da_task].md e faz commit atômico por subtarefa validada em execução real. Use ao receber qualquer pedido de implementação, refatoração ou correção que envolva mais de um passo, ou quando o usuário pedir para planejar, quebrar em tarefas, rastrear progresso ou retomar uma task já planejada.
-argument-hint: [descrição da solicitação de desenvolvimento]
+description: Cria uma pasta de plano em docs/tasks/<ID>/ com um doc principal e uma spec por etapa, com critérios de aceite, para o usuário validar exatamente o que será feito antes da execução. Nunca presume regra de negócio ou arquitetura — dúvida vai para o usuário. Executa uma spec por vez, commita em lote (mín. 3 arquivos E 500 linhas; nunca os docs nem testes) e grava ponto de parada quando o contexto fica baixo (~10%). Use quando o usuário pedir "planejar task", "criar plano", "/plan-task", retomar uma task de docs/tasks, ou quando a solicitação for grande o bastante para precisar de plano rastreável entre sessões.
 ---
 
 # plan-task
 
-Recebe uma solicitação de desenvolvimento, quebra em subtarefas granulares e mantém um
-documento vivo do progresso. O documento é a fonte da verdade: é atualizado durante a execução,
-não no final.
-
-## Invocação sem descrição
-
-Se a skill for chamada sem descrição da solicitação, procure em `docs/tasks/` uma task já
-iniciada e retome-a a partir do `## ⏸ CHECKPOINT`. Havendo mais de uma candidata, liste as
-opções e pergunte qual retomar.
-
-## Esqueleto do arquivo
-
-O documento tem sempre esta ordem, desde a criação:
+Cada task vira uma pasta:
 
 ```
-cabeçalho → subtarefas (em ordem de ID) → ## O que deu errado → ## ⏸ CHECKPOINT
+docs/tasks/<ID>/
+  <ID>.md               doc principal — visão geral, decisões, dúvidas, índice de specs, ponto de parada
+  specs/
+    01-<slug>.md        uma por etapa — o que será feito + execução dela
+    02-<slug>.md
 ```
 
-**Ao criar um documento novo, copie `template.md` (na pasta desta skill) e preencha** — não
-reconstrua o formato de memória. Em caso de dúvida sobre nível de detalhe, consulte
-`exemplo.md`, na mesma pasta, que traz um documento preenchido com os cinco status em uso.
+Cada arquivo serve a dois leitores, em duas camadas:
 
-Sem contadores de progresso no cabeçalho: a lista de subtarefas já é a fonte da verdade, e um
-resumo numérico mantido à mão dessincroniza do estado real.
+- **Usuário (topo):** precisa saber exatamente o que vai ser feito *antes* de aprovar. Texto longo esconde o que importa e faz a validação falhar — escreva como documentação boa: frase curta, concreta, sem processo.
+- **Agente (abaixo de `# Execução`):** precisa de tudo para executar e retomar sem histórico — comandos, payloads, tentativas falhas, ponto de parada. Aqui detalhe é bem-vindo.
 
-## 1. Localizar o documento
+Se a informação muda a decisão do usuário, vai no topo, curta. Se só ajuda a executar ou verificar, vai em `# Execução`. Spec em arquivo próprio mantém o doc principal curto e deixa o agente carregar só a spec em que está trabalhando.
 
-Caminho obrigatório, relativo à raiz do projeto (onde está `.git`, ou o diretório de trabalho
-se não houver repositório):
+## 0. Flags
 
-```
-docs/tasks/[nome_da_task].md
-```
+- `--no-commit` — nenhum commit automático.
+- `--no-approve` — pula a aprovação do plano.
 
-`[nome_da_task]` em kebab-case, derivado da solicitação (ex.: `importacao-csv-clientes`).
+O resto do argumento é o ID/título. Ex.: `/plan-task 2356 --no-commit`.
 
-**Antes de criar qualquer arquivo, liste o conteúdo de `docs/tasks/` com as ferramentas de
-leitura.** Se algum arquivo existente tiver correspondência lógica com a solicitação atual —
-ainda que o nome não seja idêntico ao que você geraria — é **obrigatório** retomar esse arquivo
-em vez de criar outro. `importacao-csv.md` e `importacao-de-csv-clientes.md` são a mesma task;
-duas entradas para a mesma demanda é falha de rastreamento, não organização.
+## 1. Identificar a task
 
-Havendo mais de um candidato plausível, pergunte ao usuário qual retomar antes de escrever.
-Ao retomar, leia o `## ⏸ CHECKPOINT` no fim do arquivo e continue a partir dele.
+1. Argumento, se houver.
+2. Senão, rode `git rev-parse --abbrev-ref HEAD` e extraia o ID (`feat/solicitacao-2356` → `SOLICITACAO-2356`).
+3. Sem repo ou branch sem ID (`main`, `develop`): pergunte.
 
-## 2. Fragmentar e alinhar
+Pasta: `docs/tasks/<ID-MAIUSCULO>/`.
 
-Quebre a solicitação em subtarefas lógicas e granulares. Cada subtarefa deve ser:
+## 2. Plano existente
 
-- **Independentemente verificável** — dá para dizer "isso funciona" sem depender de outra em aberto.
-- **Pequena** — se a validação exigir mais de um cenário de teste distinto, provavelmente são duas subtarefas.
-- **Commitável sozinha** — se não dá para commitar isolada sem quebrar o build, está grande demais.
-- **Ordenada por dependência** — declare as dependências explicitamente no campo próprio.
+- **Pasta com specs pendentes** → retomada: leia `## Ponto de parada` e `## Regras` do doc principal, abra a spec atual, releia os arquivos citados, suba o `Ambiente a subir` e diga ao usuário em uma linha o que vai continuar. Vá ao passo 4.
+- **Pasta completa** → pergunte se estende o plano ou abre task nova.
+- **Arquivo único `docs/tasks/<ID>.md` (formato antigo)** → continue nele no formato em que está; converter para pasta só se o usuário pedir.
+- **Nada** → passo 3.
 
-IDs sequenciais e estáveis: `T1`, `T2`, `T3`… IDs nunca são reaproveitados nem renumerados;
-subtarefas descobertas depois entram no fim (`T7`), mesmo que pertençam logicamente ao meio.
+Nunca sobrescreva plano existente sem confirmação.
 
-**Alinhe antes de executar.** Escreva o documento com todas as subtarefas em `Pendente`,
-apresente a lista ao usuário e espere o aceite antes da primeira linha de implementação.
-Plano errado aprovado cedo custa uma frase; plano errado descoberto tarde custa uma branch
-inteira de commits. Só pule o aceite se o usuário já tiver mandado executar direto.
+## 3. Planejar
 
-## 3. Estrutura obrigatória de cada subtarefa
+### Investigar antes de escrever
 
-Reproduza este bloco exatamente, um por subtarefa:
+Leia `agents.md`/`CLAUDE.md` do repo (URL, porta, credencial, comando de subir serviço, convenção de teste — não invente). Investigue o código até poder citar arquivos reais. Dúvida de regra de negócio, arquitetura ou convenção vira pergunta ao usuário, não suposição.
 
-```markdown
-## [ID] Título da subtarefa
-- **Status:** Pendente | Em andamento | Bloqueado | Cancelado | Concluído
-- **Descrição:**
-- **Critério de aceite:**
-- **Validação executada:** (o que foi executado, o que foi observado, data)
-- **Commit:** (hash curto + título, ou —)
-- **Dependências:**
-- **Notas:**
-```
+### O teste do topo
 
-Regras de preenchimento:
+Lendo só os topos (doc principal + specs), o usuário consegue dizer "esse campo não", "esse endpoint não", "faltou isso"? Se precisar adivinhar o que vai sair, falta conteúdo. Se precisar atravessar comando e log, sobra ruído.
 
-- **Status** — um único valor, sem adornos.
-  - `Bloqueado` — algo externo impede o avanço e **alguém precisa agir**. Explique o quê.
-  - `Cancelado` — o escopo mudou e a subtarefa não será feita. Não apague o bloco: registre o
-    motivo em **Notas**, preservando o histórico da decisão.
-- **Critério de aceite** — observável e testável. "Retorna os dados corretos" não serve;
-  "`GET /clientes/{id}` de um id existente retorna `200` com `nome`, `email` e `criado_em` preenchidos" serve.
-- **Validação executada** — vazio até existir execução real. Nunca preencha com o teste que
-  você *pretende* rodar.
-- **Notas** — curto, no máximo 2 ou 3 linhas, para contexto de decisão. Erros e tentativas
-  frustradas **não** vão aqui: vão para `## O que deu errado` (seção 7).
+### Doc principal (`templates/task-doc.md`)
 
-### Tamanho da evidência
+- **Objetivo:** 2-3 frases — o porquê.
+- **O que será feito (geral):** 1-2 frases nomeando as peças ("CRUD de X: migration, model, repository, service, controller e DTOs") e, se ajudar, um bloco **resumido** com o contrato principal (uma linha por rota/tabela, apontando a spec). O detalhe completo mora na spec.
+- **Decisões:** uma linha cada, com o motivo em meia linha. Detalhe técnico que sustenta a decisão vai em `## Contexto técnico`.
+- **Dúvidas abertas:** uma linha cada — pergunta, opções `(a) · (b)`, proposta. Enquanto houver dúvida, o plano não está pronto para aprovar.
+- **Specs:** tabela-índice com link, status e commit.
+- **Fora do escopo** quando houver tentação óbvia de fazer mais.
+- `# Execução`: `## Contexto técnico`, `## Ambiente` (comandos exatos), `## Regras`, `## Ponto de parada`, `## Notas` — o que vale para a task inteira.
+- **`## Regras`** é preenchida sempre, a partir do `agents.md`/`CLAUDE.md` (repo e global) e das regras fixas desta skill: formato de commit do repo com exemplo, proibições de commit (`Co-Authored-By`, menção a IA, docs, testes ignorados), código sem comentários e as demais regras obrigatórias do repo. A compactação de contexto pode levar a skill e o `agents.md` embora no meio da execução; o doc é o que sobra, então as regras precisam estar nele.
 
-**Validação executada** é um resumo, não um dump. Registre o que foi executado, o resultado
-observado e as **chaves ou sinais principais verificados** — omita arrays longos, dados
-repetitivos e campos irrelevantes ao critério de aceite:
+### Spec (`templates/spec.md`)
 
-```
-POST /clientes → 201; corpo com id (uuid), nome, email, criado_em (ISO-8601). 2026-08-14
-```
+Arquivo `specs/<nn>-<slug>.md`, `nn` com dois dígitos na ordem de execução, `slug` curto em kebab-case.
 
-Se o payload ou a saída forem complexos e valer a pena preservá-los, grave em
-`docs/tasks/evidencias/[ID].json` (ou `.txt`) e referencie:
+- **Título:** imperativo e específico, no limite de palavras do formato de commit do repo (ex.: até 6) — vira assunto de commit.
+- **O que será feito:** o que vai existir no fim, com nome real: migration `V31__CriarTabelaExemplo`, `TabelaExemploService.salvar`, aba "Entregadores", `POST /...`. Toda estrutura nova ou alterada aparece por inteiro em bloco de código: campos de tabela (nome, tipo, nulidade), payload de request/response, valores de enum, colunas de tela/relatório. Proibido o vago: "ajusta o service", "cria os DTOs necessários", "adiciona os campos".
+- Cada estrutura aparece **uma vez**, na spec que a cria. Spec seguinte que usa a mesma estrutura referencia ("consome o payload da spec 02") em vez de copiar — repetição dobra o texto sem dar nada novo pra validar, e cópias divergem.
+- **Arquivos:** uma linha com os caminhos.
+- **Pronto quando:** comportamento observável em linguagem de produto, uma linha.
+- Fora do topo: comando, número de linha, versão de ferramenta, saída de teste.
+- `# Execução` → **Critérios**, cada um terminando em `— Validar: \`<comando>\`` (ou `— Validar: manual` + o que olhar). É o que o passo 4 vai rodar; sem comando a verificação vira opinião.
 
-```
-GET /relatorios?periodo=2026-07 → 200; 412 itens, chaves validadas: total, itens[].valor,
-itens[].data. Evidência: docs/tasks/evidencias/T4.json. 2026-08-14
-```
+Critério bom descreve o resultado observado, não o status:
+- Ruim: `Endpoint responde 200`
+- Bom: `GET /api/rotas traz cada item com id_rota, descricao e porcentagemDeAcrescimo não nulos — Validar: \`curl -s -i localhost:8888/api/rotas\``
 
-Redija segredos antes de gravar evidência: tokens, senhas, chaves de API e dados pessoais reais
-saem do arquivo (substitua por `***`).
+Lista: tamanho e conteúdo. Caminho de erro relevante: critério próprio com status e corpo. Spec que toca API inclui chamada real ao serviço local. Lógica nova inclui teste unitário; atravessou camadas, teste de integração.
 
-## 4. Regra de transição de status (estrita)
+Sem limite de quantidade: o número de specs sai do tamanho da task. O que define o corte é a granularidade — cada spec é uma entrega coerente, verificável sozinha, que cabe numa sessão. Spec que mistura entregas sem relação (ex.: migration + tela) se divide; spec que não dá pra verificar sem a seguinte se junta a ela. Ordene por dependência.
 
-Uma subtarefa só vira **Concluído** depois de **observar o comportamento real em execução**.
-Não basta o código existir: é preciso rodar e olhar o resultado.
+Se os templates não estiverem legíveis, siga a mesma estrutura descrita aqui.
 
-Nunca conclui subtarefa:
+### Status
 
-- Código escrito e "parece certo".
-- Compilação, type-check ou lint passando.
-- Teste unitário com a dependência mockada.
-- Resultado previsto ou simulado em vez de resultado observado.
+- Task: `⬜ Pendente` | `🔄 Em andamento` | `⏸️ Pausado` | `✅ Concluído`
+- Spec: `⬜ Pendente` | `🔄 Em andamento` | `✅ Feito` | `⏭️ Dispensado` | `❌ Cancelado`
 
-### Forma da validação por tipo de subtarefa
+Só esses. Sinônimos (`Concluída`, `Concluída no escopo ajustado`) quebram a leitura entre sessões; o detalhe vai em Notas. Status da spec fica no cabeçalho dela **e** na tabela do doc principal — atualize os dois juntos.
 
-| Tipo | O que conta como validação |
-|---|---|
-| Endpoint HTTP | requisição real ao serviço **em execução** + inspeção do corpo da resposta |
-| CLI / script | execução real + inspeção do stdout e do exit code |
-| Migração de banco | rodar a migração + consultar o schema/dados resultantes |
-| UI | renderizar e interagir de fato com a tela |
-| Job / worker / fila | disparar e inspecionar o efeito produzido |
-| Biblioteca / módulo | exercitar a função com entradas reais e conferir a saída |
+### Aprovação
 
-Para endpoints HTTP, vale a regra específica: **status `200` isolado não conclui nada.** Um
-`200` com corpo vazio, `data: null`, erro embutido no payload ou campos faltando é reprovação.
-O equivalente em outros tipos: exit code `0` sem saída esperada, migração que roda sem criar a
-coluna, tela que monta sem os dados — tudo reprovação.
+Mostre no chat, nesta ordem: caminho da pasta, **O que será feito** (geral), o **O que será feito** de cada spec (título + blocos de estrutura) e **Dúvidas abertas**. Objetivo, Decisões, Arquivos e `# Execução` ficam só nos arquivos. Aguarde aprovação (salvo `--no-approve`).
 
-### Ambiente de validação
+## 4. Executar
 
-Valide contra ambiente **local ou de desenvolvimento**. Nunca contra produção. Se a validação
-criar dados, limpe-os ao final ou use dados claramente marcados como de teste. Se o único
-ambiente disponível for produção, pare e pergunte ao usuário.
+Uma spec por vez:
 
-Se não houver ambiente executável (sem serviço subível, sem credenciais, sem base), a subtarefa
-vai para `Bloqueado` com o motivo e o usuário é avisado. Nunca promova por conveniência.
+1. Marque `🔄 Em andamento` (spec e tabela do doc principal). `git status --short`: alteração alheia pré-existente fica intocada e vai em Notas.
+2. Implemente **o que foi aprovado**. Se a execução exigir algo fora do "O que será feito" aprovado — campo, tabela, payload, endpoint ou comportamento diferente — pare e leve ao usuário antes. Ele aprovou aquela estrutura; ajuste silencioso invalida a validação dele. Ajuste trivial (import, arquivo auxiliar óbvio) só atualiza `Arquivos:`.
+3. Verifique cada critério rodando o `Validar:`. Contra o ambiente real (suba o `## Ambiente`), lendo o corpo da resposta campo a campo. 200 com corpo vazio, campo nulo ou lista incompleta = não atendido. Só passa com mock = continua `🔄`.
+4. Atualize a `# Execução` da spec: checkboxes, **Feito** (solução final, curta), **Observado** (payload/saída real resumida — "passou" não serve a quem retomar), **Não funcionou** (`abordagem → sintoma`, append-only: é o que impede a próxima sessão de repetir o erro).
+5. Atualize status na spec e na tabela do doc principal, e o `Próximo passo`.
+6. Lote de commit (pulado com `--no-commit`) — ver abaixo.
+7. Sobrescreva `## Ponto de parada` do doc principal apontando para a próxima spec.
 
-### Quando a validação falha
+Ao fim da última spec, diga ao usuário em 2-4 linhas o que foi entregue e o que ficou de fora; não repita os docs.
 
-Falha é qualquer resultado fora do critério de aceite — erro, timeout, ou sucesso aparente com
-resultado incorreto. Nesse caso:
+### Lote de commit
 
-1. **Não conclua a subtarefa.** Mantenha o status em `Em andamento`.
-2. Registre uma linha em `## O que deu errado` com o ID, o esperado e o obtido. Sem colar payload.
-3. Corrija e valide de novo.
+Commits agrupam specs para não poluir o histórico com micro-commits.
 
-Se três ciclos de correção→validação passarem **sem que a natureza do erro mude**, pare de
-tentar: mude para `Bloqueado`, registre o impedimento e leve a questão ao usuário. Erro que
-muda a cada tentativa é progresso; erro idêntico três vezes é loop, e insistir em silêncio
-queima contexto e esconde o problema.
+- Conte arquivos de código **tocados por specs concluídas desta task e ainda não commitados**. Nunca conte nem commite: a pasta `docs/tasks/<ID>/` (artefato local, não versionado) e testes novos (ficam fora do Git por regra do repo). Sujeira alheia também fica fora.
+- Some linhas: `git diff --shortstat -- <arquivos>` para rastreados; `wc -l` para novos.
+- Commite quando **≥ 3 arquivos E ≥ 500 linhas**. Só uma das duas não basta.
+- Flush mesmo abaixo do limite: ao fechar a última spec e antes de pausar por contexto — trabalho verificado não fica sem commit no fim da sessão.
+- Formato: o do `## Regras` (que vem do `agents.md`/`CLAUDE.md`); ele vence qualquer exemplo daqui. Sem convenção no repo, use:
 
-## 5. Commit atômico por subtarefa
+  ```
+  feat(2356): Adiciona paginação e filtro de categoria
 
-Cada subtarefa concluída rende **um commit, e apenas um**. Regras:
+  Lista de produtos travava com catálogos grandes; a paginação e o filtro por categoria reduzem a carga e a busca.
+  ```
 
-- Commite **somente** quando o status virar `Concluído` — ou seja, depois da validação real.
-  Código não validado não entra no histórico como se estivesse pronto.
-- O commit inclui a mudança de código, a evidência em `docs/tasks/evidencias/` (se houver) **e**
-  a atualização do `docs/tasks/[nome_da_task].md` — tudo no mesmo commit.
-- Nada de outras subtarefas junto. Se o `git status` mostrar arquivos modificados que não
-  pertencem a esta subtarefa, adicione ao índice (`git add`) apenas os arquivos estritamente
-  relacionados a ela.
-- Se o repositório estiver na branch padrão (`main`/`master`), **crie uma branch antes** do
-  primeiro commit da task.
-- **Nunca faça push** por iniciativa própria. Push só quando o usuário pedir explicitamente.
-- Registre o hash curto no campo **Commit** da subtarefa.
+  Assunto `feat(<id>): ` + verbo + até 6 palavras. Lote de uma spec: assunto = título dela. Várias: assunto resume a entrega. Corpo opcional, parágrafo único com o porquê, sem lista de arquivos nem bullets.
 
-### Template obrigatório de mensagem de commit
+- Sem `Co-Authored-By` nem menção a IA — o usuário assina os commits. Sem `--no-verify`; hook falhou, corrija a causa.
+- Preencha **Commit** de cada spec do lote (arquivo e tabela) com o mesmo hash.
 
-Padrão Conventional Commits. Título imperativo de 5 a 6 palavras, linha em branco, e um
-parágrafo curto (1 a 3 linhas) explicando a mudança técnica ou o motivo da implementação.
+### Abordagem falhou
 
-```text
-<tipo>: <resumo imperativo curto>
+Não empilhe tentativa sobre código quebrado:
 
-<parágrafo curto com detalhes ou o motivo da implementação>
-```
+1. `git status --short` e `git diff --stat`.
+2. Reverta **arquivo a arquivo**, só os da spec que falhou (`git restore --staged --worktree -- <arquivo>`). Restore em massa apagaria specs concluídas que esperam o lote.
+3. Já commitada num lote: reverter histórico só com confirmação do usuário.
+4. `git checkout .`, `git reset --hard`, `git clean` só com pedido explícito.
+5. Registre em **Não funcionou** na hora, antes de tentar de novo.
 
-Exemplo:
+Duas abordagens falhas na mesma spec: pare e peça direção.
 
-```text
-feat: valida CPF no cadastro
+Se a realidade contradiz o plano (spec desnecessária, etapa faltando), crie/marque a spec, atualize a tabela, registre o motivo em Notas e avise o usuário se mudou algo que ele aprovou. Spec nova entre duas existentes não renumera as outras: use o próximo número livre e reordene só a tabela.
 
-Implementa a chamada à API externa para validar o formato e a situação cadastral do CPF.
-Evidência salva e tipagem ajustada no payload.
-```
+## 5. Parar por contexto baixo
 
-O ID da subtarefa **não** entra na mensagem — a rastreabilidade fica no campo **Commit** do
-documento, que guarda o hash. Se o repositório já tiver convenção própria de mensagem, ela
-prevalece sobre este template.
+Alvo: ~10% de contexto restante. Sinais: aviso do harness, transcript com muitos resultados grandes, você não lembra as primeiras specs sem reler.
 
-Se o projeto não for um repositório git, pule esta seção e anote `—` no campo **Commit**.
+1. Termine a edição em andamento — nada de código pela metade.
+2. Atualize a spec atual (Feito parcial, Não funcionou). Task → `⏸️ Pausado`.
+3. Flush do lote pendente (salvo `--no-commit`).
+4. Sobrescreva `## Ponto de parada` para um leitor sem nenhum histórico: spec atual e o que está pronto nela, próximo passo como ação, lote pendente (deve estar vazio), ambiente a subir com comandos exatos (inclusive estado montado na mão: seed, container, env var), contexto que não está no código.
+5. Uma linha ao usuário: parou por contexto, plano em `docs/tasks/<ID>/`, retomar com `/plan-task <ID>`.
 
-## 6. Checkpoint e persistência
+## Regras dos docs
 
-O checkpoint é o que permite retomar a task numa sessão futura. Grave-o:
-
-- **Ao concluir cada subtarefa** — este é o gatilho principal, e coincide com o commit atômico.
-  Assim o documento nunca fica muito à frente do último ponto seguro.
-- **Ao pausar por qualquer motivo** — fim de sessão, bloqueio, pergunta ao usuário.
-- **Ao perceber o contexto se aproximando do limite** (margem de 10%), pausando antes de
-  continuar a executar. Este gatilho é secundário e não confiável: a janela pode ser compactada
-  sem aviso, então nunca dependa só dele para persistir estado.
-
-Ao gravar: confira que status e notas das subtarefas refletem o estado real — se a regra de
-atualizar a cada mudança de status foi seguida, isso é só uma conferência, não uma reescrita.
-Depois substitua o bloco de checkpoint anterior (vale sempre o mais recente):
-
-```markdown
-## ⏸ CHECKPOINT — [AAAA-MM-DD HH:MM]
-- **Parou em:** [ID e o ponto exato dentro da subtarefa]
-- **Feito nesta sessão:** [resumo objetivo]
-- **Próximo passo:** [primeira ação concreta da retomada]
-- **Contexto necessário para retomar:** [arquivos, comandos, decisões tomadas, valores/IDs em uso]
-- **Estado do git:** [branch, último commit da task, se há trabalho não commitado]
-- **Pendências abertas:** [dúvidas ou bloqueios que precisam de resposta do usuário]
-```
-
-Ao pausar de fato, avise o usuário que a execução parou e onde o estado ficou salvo.
-
-## 7. Seção "O que deu errado"
-
-Seção única e cronológica com os tropeços do desenvolvimento. Concentra o ruído que de outro
-modo inflaria as **Notas** de cada subtarefa.
-
-```markdown
-## O que deu errado
-- **[ID]** [o que se esperava] → [o que aconteceu]. Causa: [raiz, se identificada]. Resolvido em: [como, ou "em aberto"]
-```
-
-Regras:
-
-- **Uma linha por ocorrência.** Sem stack trace completo, sem payload colado, sem log bruto.
-  Se o detalhe importar, referencie `docs/tasks/evidencias/`.
-- Registre o que custou tempo ou mudou o rumo: validação reprovada, premissa errada sobre a API,
-  dependência que não se comportou como esperado, retrabalho.
-- Não registre digitação corrigida na hora nem erro de sintaxe trivial.
-- Nunca apague linhas antigas — o valor da seção é evitar repetir o mesmo erro numa sessão futura.
-
-## Durante a execução
-
-- Atualize o documento **a cada mudança de status**, não em lote no final.
-- Descobriu trabalho novo? Crie a subtarefa no documento antes de executá-la.
-- Uma subtarefa nunca some do documento: vira `Cancelado` com o motivo, jamais é apagada.
+- Idioma do usuário. Sem comentários no código gerado.
+- Atualize com Edit, nunca reescreva um arquivo inteiro.
+- `## Ponto de parada` é sobrescrito (nunca acumula histórico — o histórico está nas specs) e sempre existe; com a task completa, diz "Concluída".
+- Seções novas fora do template não entram no topo; se precisar, vão em `# Execução`.
